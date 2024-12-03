@@ -23,3 +23,6 @@ go.work.sum
 
 # env file
 .env
+
+# Location of the env file
+KeduAPI/internal/.env
