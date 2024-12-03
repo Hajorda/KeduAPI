@@ -26,3 +26,4 @@ go.work.sum
 
 # Location of the env file
 KeduAPI/internal/.env
+internal/.env
