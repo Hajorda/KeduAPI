@@ -1,0 +1,27 @@
+# Ignore the Dockerfile itself
+Dockerfile
+
+# Ignore the .git directory
+.git
+
+# Ignore the .gitignore file
+.gitignore
+
+# Ignore the cloudbuild.yaml file
+cloudbuild.yaml
+
+# Ignore environment files except credentials needed for build
+.env
+internal/.env
+
+# Don't ignore credentials file needed for build
+!internal/keduapi-25ab2455b8d3.json
+
+# Ignore other common files
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out

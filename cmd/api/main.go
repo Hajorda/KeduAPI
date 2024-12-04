@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -15,7 +14,6 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
@@ -24,8 +22,7 @@ const (
 	projectID         = "keduapi"
 	bucketName        = "bucket-quickstart_keduapi"
 	maxFileSize       = 3 * 1024 * 1024 // 3 MB
-	defaultUploadPath = "test-files/"
-	redisTTL          = 5 * time.Minute // Cache expiration time
+	defaultUploadPath = "kedys/"
 )
 
 type ClientUploader struct {
@@ -33,32 +30,17 @@ type ClientUploader struct {
 	projectID  string
 	bucketName string
 	uploadPath string
-	cache      *redis.Client
 }
 
 var uploader *ClientUploader
 
 func init() {
-	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "../../internal/keduapi-25ab2455b8d3.json")
-
 	ctx := context.Background()
 
 	// Initialize Google Cloud Storage client
-	client, err := storage.NewClient(ctx, option.WithCredentialsFile(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")))
+	client, err := storage.NewClient(ctx)
 	if err != nil {
-		log.Fatalf("Failed to create Google Cloud Storage client: %v", err)
-	}
-
-	// Initialize Redis client
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379", // Update for production (e.g., Cloud Redis)
-		Password: "",               // No password by default
-		DB:       0,                // Default DB
-	})
-
-	// Test Redis connection
-	if err := redisClient.Ping(ctx).Err(); err != nil {
-		log.Fatalf("Failed to connect to Redis: %v", err)
+		log.Printf("Failed to create Google Cloud Storage client: %v", err)
 	}
 
 	uploader = &ClientUploader{
@@ -66,7 +48,6 @@ func init() {
 		projectID:  projectID,
 		bucketName: bucketName,
 		uploadPath: defaultUploadPath,
-		cache:      redisClient,
 	}
 }
 
@@ -104,7 +85,7 @@ func main() {
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"message": "File uploaded successfully"})
+		c.JSON(http.StatusOK, gin.H{"message": "Kedy uploaded successfully"})
 	})
 
 	// List all images
@@ -131,7 +112,6 @@ func main() {
 	})
 
 	// Get a random image
-	// Modify the random-image route to use the full object name
 	r.GET("/random-image", func(c *gin.Context) {
 		images, err := uploader.ListImages()
 		if err != nil || len(images) == 0 {
@@ -139,15 +119,12 @@ func main() {
 			return
 		}
 
-		// Randomly pick an image
 		rand.Seed(time.Now().UnixNano())
 		randomIndex := rand.Intn(len(images))
 		randomImage := images[randomIndex]
 
-		// Log the random image
 		log.Printf("Random image selected: %s", randomImage)
 
-		// Retrieve image URL and metadata using the full image name
 		imageURL, metadata, err := uploader.GetSpecificImage(randomImage)
 		if err != nil {
 			log.Printf("Error retrieving image metadata: %v", err)
@@ -161,7 +138,14 @@ func main() {
 	// Health check endpoint
 	r.GET("/health", uploader.HealthCheck())
 
-	r.Run()
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080" // Default port if not specified
+	}
+
+	if err := r.Run(":" + port); err != nil {
+		log.Fatalf("Failed to run server: %v", err)
+	}
 }
 
 // UploadFile uploads a file to Google Cloud Storage
@@ -177,27 +161,13 @@ func (c *ClientUploader) UploadFile(file multipart.File, object string) error {
 		return fmt.Errorf("Writer.Close: %v", err)
 	}
 
-	// Invalidate cache for image list
-	c.cache.Del(ctx, "images:list")
-
 	return nil
 }
 
 // ListImages lists all images in the bucket
 func (c *ClientUploader) ListImages() ([]string, error) {
 	ctx := context.Background()
-	cacheKey := "images:list"
 
-	// Check Redis cache
-	cachedList, err := c.cache.Get(ctx, cacheKey).Result()
-	if err == nil {
-		var images []string
-		if err := json.Unmarshal([]byte(cachedList), &images); err == nil {
-			return images, nil
-		}
-	}
-
-	// Fetch from Google Cloud Storage
 	it := c.cl.Bucket(c.bucketName).Objects(ctx, &storage.Query{Prefix: c.uploadPath})
 	var images []string
 	for {
@@ -211,32 +181,14 @@ func (c *ClientUploader) ListImages() ([]string, error) {
 		images = append(images, objAttrs.Name)
 	}
 
-	// Cache result in Redis
-	imagesJSON, _ := json.Marshal(images)
-	c.cache.Set(ctx, cacheKey, imagesJSON, redisTTL)
-
 	return images, nil
 }
 
 // GetSpecificImage retrieves a specific image's metadata
 func (c *ClientUploader) GetSpecificImage(imageName string) (string, map[string]interface{}, error) {
 	ctx := context.Background()
-	// Remove the upload path prefix if it exists
 	objectName := strings.TrimPrefix(imageName, c.uploadPath)
-	cacheKey := "image:" + objectName
 
-	// Check Redis cache
-	cachedMetadata, err := c.cache.Get(ctx, cacheKey).Result()
-	if err == nil {
-		var metadata map[string]interface{}
-		if err := json.Unmarshal([]byte(cachedMetadata), &metadata); err == nil {
-			// Generate public URL
-			publicURL := fmt.Sprintf("https://storage.googleapis.com/%s/%s", c.bucketName, c.uploadPath+objectName)
-			return publicURL, metadata, nil
-		}
-	}
-
-	// Fetch metadata from Google Cloud Storage
 	obj := c.cl.Bucket(c.bucketName).Object(c.uploadPath + objectName)
 	attrs, err := obj.Attrs(ctx)
 	if err != nil {
@@ -250,27 +202,15 @@ func (c *ClientUploader) GetSpecificImage(imageName string) (string, map[string]
 		"updated":      attrs.Updated,
 	}
 
-	// Cache metadata in Redis
-	metadataJSON, _ := json.Marshal(metadata)
-	c.cache.Set(ctx, cacheKey, metadataJSON, redisTTL)
-
-	// Generate public URL
 	publicURL := fmt.Sprintf("https://storage.googleapis.com/%s/%s", c.bucketName, attrs.Name)
 
 	return publicURL, metadata, nil
 }
 
-// HealthCheck checks the health of Redis and Google Cloud Storage
+// HealthCheck checks the health of Google Cloud Storage
 func (c *ClientUploader) HealthCheck() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		health := map[string]string{}
-
-		// Check Redis
-		if err := c.cache.Ping(context.Background()).Err(); err != nil {
-			health["redis"] = "unhealthy"
-		} else {
-			health["redis"] = "healthy"
-		}
 
 		// Check Google Cloud Storage
 		if _, err := c.cl.Bucket(c.bucketName).Attrs(context.Background()); err != nil {

@@ -6,7 +6,6 @@ require (
 	cloud.google.com/go/storage v1.47.0
 	github.com/gin-gonic/gin v1.10.0
 	github.com/redis/go-redis/v9 v9.7.0
-	golang.org/x/exp v0.0.0-20190121172915-509febef88a4
 	google.golang.org/api v0.203.0
 )
 
