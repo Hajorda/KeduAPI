@@ -1,6 +1,6 @@
 # KeduAPI Documentation
 
-KeduAPI is a simple API for uploading and retrieving images stored in Google Cloud Storage. Below is the detailed documentation on how to use the API, including the endpoints, example requests, and responses, along with guidance on how to integrate this API in a React application.
+KeduAPI is a simple API for uploading and retrieving kedy images. Below is the detailed documentation on how to use the API, including the endpoints, example requests, and responses, along with guidance on how to integrate this API in a React application.
 
 ## Base URL
 
@@ -271,62 +271,5 @@ The API returns errors in JSON format with appropriate HTTP status codes.
 - **Caching:** Image lists are cached in Redis for improved performance.
 - **Authentication:** The API is currently configured to allow unauthenticated access.
 - **Environment:** Ensure that the Google Cloud credentials are properly set in the production environment.
-
----
-
-## React Integration Example
-
-Here’s a simple example of how to integrate KeduAPI in a React application for uploading and fetching images.
-
-### Example: React Component for Image Upload
-
-```javascript
-import React, { useState } from 'react';
-import axios from 'axios';
-
-const ImageUpload = () => {
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [message, setMessage] = useState('');
-
-  const handleFileChange = (e) => {
-    setSelectedFile(e.target.files[0]);
-  };
-
-  const handleUpload = async () => {
-    if (!selectedFile) {
-      setMessage('Please select a file first.');
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append('file_input', selectedFile);
-
-    try {
-      const response = await axios.post('https://keduapi-1002036435905.europe-west3.run.app/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      });
-      setMessage('File uploaded successfully');
-      console.log(response.data);
-    } catch (error) {
-      setMessage('Upload failed');
-      console.error('Upload error:', error.response ? error.response.data : error.message);
-    }
-  };
-
-  return (
-    <div>
-      <input type="file" onChange={handleFileChange} />
-      <button onClick={handleUpload}>Upload</button>
-      {message && <p>{message}</p>}
-    </div>
-  );
-};
-
-export default ImageUpload;
-```
-
-This component allows users to select an image file and upload it to KeduAPI, displaying a message upon success or failure.
 
 ---
