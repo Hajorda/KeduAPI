@@ -118,7 +118,7 @@ func main() {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "No images found or failed to retrieve images"})
 			return
 		}
-
+// guzelş
 		rand.Seed(time.Now().UnixNano())
 		randomIndex := rand.Intn(len(images))
 		randomImage := images[randomIndex]
