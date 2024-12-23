@@ -1,13 +1,13 @@
 # KeduAPI Documentation 🐱✨
 
-Welcome to the **KeduAPI** documentation! This is a simple yet powerful API designed to help you upload, manage, and retrieve kedy images from our server. Whether you want to upload your favorite feline photos or retrieve random cat gifs for some extra flair, this API has you covered. 🚀🐾
+Welcome to the **KeduAPI** documentation! This is a simple yet powerful API designed to help you upload, manage, and retrieve kedy images from our server. Whether you want to upload your favorite kedy photos or retrieve random kedys for some extra flair, this API has you covered. 🚀🐾
 
 Let's dive into the details!
 
 ## Base URL
 
 ```
-https://keduapi-1002036435905.europe-west3.run.app
+https://api.keduapp.online
 ```
 
 ---
@@ -29,7 +29,7 @@ https://keduapi-1002036435905.europe-west3.run.app
 #### Example Request (using `curl`)
 
 ```bash
-curl -X POST "https://keduapi-1002036435905.europe-west3.run.app/upload" \
+curl -X POST "https://api.keduapp.online/upload" \
   -F "file_input=@/path/to/your/image.jpg"
 ```
 
@@ -43,7 +43,7 @@ const uploadImage = async (file) => {
   formData.append('file_input', file);
 
   try {
-    const response = await axios.post('https://keduapi-1002036435905.europe-west3.run.app/upload', formData, {
+    const response = await axios.post('https://api.keduapp.online/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data'
       }
@@ -80,7 +80,7 @@ const uploadImage = async (file) => {
 #### Example Request (using `curl`)
 
 ```bash
-curl -X GET "https://keduapi-1002036435905.europe-west3.run.app/list-images"
+curl -X GET "https://api.keduapp.online/list-images"
 ```
 
 #### Example Request (using `React` and `axios`)
@@ -88,7 +88,7 @@ curl -X GET "https://keduapi-1002036435905.europe-west3.run.app/list-images"
 ```javascript
 const listImages = async () => {
   try {
-    const response = await axios.get('https://keduapi-1002036435905.europe-west3.run.app/list-images');
+    const response = await axios.get('https://api.keduapp.online/list-images');
     console.log('Images:', response.data.images);
   } catch (error) {
     console.error('Error listing images:', error.response ? error.response.data : error.message);
@@ -129,7 +129,7 @@ const listImages = async () => {
 #### Example Request (using `curl`)
 
 ```bash
-curl -X GET "https://keduapi-1002036435905.europe-west3.run.app/get-image/image1.jpg"
+curl -X GET "https://api.keduapp.online/get-image/image1.jpg"
 ```
 
 #### Example Request (using `React` and `axios`)
@@ -137,7 +137,7 @@ curl -X GET "https://keduapi-1002036435905.europe-west3.run.app/get-image/image1
 ```javascript
 const getImage = async (imageName) => {
   try {
-    const response = await axios.get(`https://keduapi-1002036435905.europe-west3.run.app/get-image/${imageName}`);
+    const response = await axios.get(`https://api.keduapp.online/get-image/${imageName}`);
     console.log('Image URL:', response.data.image_url);
     console.log('Metadata:', response.data.metadata);
   } catch (error) {
@@ -168,7 +168,7 @@ const getImage = async (imageName) => {
 
 ---
 
-### 4. Get a Random Image 🎲
+### 4. Get a Random Image 🌲
 
 **URL:** `/random-image`  
 **Method:** `GET`  
@@ -177,7 +177,7 @@ const getImage = async (imageName) => {
 #### Example Request (using `curl`)
 
 ```bash
-curl -X GET "https://keduapi-1002036435905.europe-west3.run.app/random-image"
+curl -X GET "https://api.keduapp.online/random-image"
 ```
 
 #### Example Request (using `React` and `axios`)
@@ -185,7 +185,7 @@ curl -X GET "https://keduapi-1002036435905.europe-west3.run.app/random-image"
 ```javascript
 const getRandomImage = async () => {
   try {
-    const response = await axios.get('https://keduapi-1002036435905.europe-west3.run.app/random-image');
+    const response = await axios.get('https://api.keduapp.online/random-image');
     console.log('Random Image URL:', response.data.image_url);
     console.log('Metadata:', response.data.metadata);
   } catch (error) {
@@ -224,7 +224,7 @@ const getRandomImage = async () => {
 #### Example Request (using `curl`)
 
 ```bash
-curl -X GET "https://keduapi-1002036435905.europe-west3.run.app/health"
+curl -X GET "https://api.keduapp.online/health"
 ```
 
 #### Example Request (using `React` and `axios`)
@@ -232,7 +232,7 @@ curl -X GET "https://keduapi-1002036435905.europe-west3.run.app/health"
 ```javascript
 const checkHealth = async () => {
   try {
-    const response = await axios.get('https://keduapi-1002036435905.europe-west3.run.app/health');
+    const response = await axios.get('https://api.keduapp.online/health');
     console.log('Health Status:', response.data);
   } catch (error) {
     console.error('Error checking health:', error.response ? error.response.data : error.message);
@@ -269,7 +269,7 @@ The API returns errors in JSON format with appropriate HTTP status codes.
 
 ---
 
-## Notes 📑
+## Notes 📁
 
 - **File Restrictions:** Only `.jpg` and `.jpeg` files are accepted, with a maximum size of 3 MB.
 - **Caching:** Image lists are cached in Redis for improved performance.
@@ -283,3 +283,4 @@ The API returns errors in JSON format with appropriate HTTP status codes.
 ![Turning Cat GIF](https://media.tenor.com/T8SBWIfKcFQAAAAj/maxwell-cat.gif)
 
 Hope this documentation brought a smile to your face! 😄
+
