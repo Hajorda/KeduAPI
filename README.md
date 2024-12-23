@@ -60,7 +60,7 @@ const uploadImage = async (file) => {
 - `200 OK`  
   ```json
   {
-    "message": "File uploaded successfully"
+    "message": "Kedy uploaded successfully"
   }
   ```
 
