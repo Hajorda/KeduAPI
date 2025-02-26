@@ -1,21 +1,28 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"image"
 	"io"
 	"log"
-	"math/rand"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
+	_ "image/jpeg"
+	_ "image/png"
+
 	"cloud.google.com/go/storage"
+	"github.com/corona10/goimagehash"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"golang.org/x/exp/rand"
 	"google.golang.org/api/iterator"
-	"google.golang.org/api/option"
 )
 
 const (
@@ -26,10 +33,11 @@ const (
 )
 
 type ClientUploader struct {
-	cl         *storage.Client
-	projectID  string
-	bucketName string
-	uploadPath string
+	cl          *storage.Client
+	projectID   string
+	bucketName  string
+	uploadPath  string
+	imageHashes map[string]*goimagehash.ImageHash
 }
 
 var uploader *ClientUploader
@@ -52,7 +60,21 @@ func init() {
 }
 
 func main() {
+
 	r := gin.Default()
+
+	// Enable CORS
+	r.Use(cors.Default())
+
+	// Serve static files
+	r.Static("/public", "./public")
+
+	// Serve the documentation at the root URL
+	r.GET("/", func(c *gin.Context) {
+		c.File("./public/index.html")
+	})
+
+	r.POST("/verify-captcha", VerifyCaptcha)
 
 	// Upload an image
 	r.POST("/upload", func(c *gin.Context) {
@@ -118,7 +140,7 @@ func main() {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "No images found or failed to retrieve images"})
 			return
 		}
-// guzelş
+
 		rand.Seed(time.Now().UnixNano())
 		randomIndex := rand.Intn(len(images))
 		randomImage := images[randomIndex]
@@ -135,6 +157,23 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"image_url": imageURL, "metadata": metadata})
 	})
 
+	// ozhanDetector checks if the user's IP is associated with Bilkent University ASN (AS8466)
+	r.GET("/ozhan-detector", func(c *gin.Context) {
+		userIP := c.ClientIP() // Get user's IP address
+		// print the user's IP address for debugging
+		log.Printf("User's IP address: %s", userIP)
+		// Check if the user is associated with Bilkent University ASN
+		isOzhanDetected, err := isItOzhan(userIP)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify ASN", "details": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"isItOzhan": isOzhanDetected,
+		})
+	})
+
 	// Health check endpoint
 	r.GET("/health", uploader.HealthCheck())
 
@@ -148,11 +187,146 @@ func main() {
 	}
 }
 
+// isItOzhan checks if the user's IP is associated with Bilkent University ASN (AS8466)
+func isItOzhan(userIP string) (bool, error) {
+	// Call an external IP geolocation API (e.g., IPinfo) to get the ASN for the user's IP address
+	apiURL := fmt.Sprintf("https://ipinfo.io/%s/json?token=8b3199dacefb30", userIP)
+	resp, err := http.Get(apiURL)
+	if err != nil {
+		return false, fmt.Errorf("failed to get ASN data: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var data struct {
+		ASN struct {
+			ASN string `json:"asn"`
+		} `json:"asn"`
+	}
+
+	// Decode the response body
+	body, _ := io.ReadAll(resp.Body)
+	err = json.Unmarshal(body, &data)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse ASN data: %v", err)
+	}
+
+	// Check if the ASN is AS8466 (Bilkent University)
+	if data.ASN.ASN == "AS8466" {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+// VerifyCaptcha verifies the captcha token using Cloudflare Turnstile
+func VerifyCaptcha(c *gin.Context) {
+	var reqBody struct {
+		Token string `json:"token"`
+	}
+
+	// Parse incoming JSON request
+	if err := c.ShouldBindJSON(&reqBody); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request"})
+		return
+	}
+
+	// Validate the token with Cloudflare Turnstile API
+	secretKey := "0x4AAAAAAA4niU1crrMPhzvp4comG9pcJgs"
+	if secretKey == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Secret key not set"})
+		return
+	}
+	url := "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+
+	// Get the client's IP address
+	ip := c.ClientIP()
+
+	// Make POST request to verify captcha
+	resp, err := http.PostForm(url, map[string][]string{
+		"secret":   {secretKey},
+		"response": {reqBody.Token},
+		"remoteip": {ip},
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to verify captcha"})
+		return
+	}
+	defer resp.Body.Close()
+
+	// Read and print the full response body for debugging
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to read captcha response"})
+		return
+	}
+
+	// Read and parse the response
+	var captchaResponse struct {
+		Success    bool     `json:"success"`
+		ErrorCodes []string `json:"error-codes"`
+	}
+	if err := json.Unmarshal(body, &captchaResponse); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to parse captcha response"})
+		return
+	}
+
+	// Check if captcha validation was successful
+	if !captchaResponse.Success {
+		c.JSON(http.StatusForbidden, gin.H{
+			"message":     "Captcha validation failed",
+			"error_codes": captchaResponse.ErrorCodes,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Captcha validated successfully"})
+}
+
+func (c *ClientUploader) computeHash(img multipart.File) (*goimagehash.ImageHash, error) {
+	// Read the file into memory
+	data, err := io.ReadAll(img)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %v", err)
+	}
+
+	// Decode the image
+	imgReader := bytes.NewReader(data)
+	imgDecoded, _, err := image.Decode(imgReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode image: %v", err)
+	}
+
+	// Compute perceptual hash
+	hash, err := goimagehash.PerceptionHash(imgDecoded)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute image hash: %v", err)
+	}
+
+	return hash, nil
+}
+
 // UploadFile uploads a file to Google Cloud Storage
 func (c *ClientUploader) UploadFile(file multipart.File, object string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*50)
 	defer cancel()
 
+	// Compute hash
+	file.Seek(0, io.SeekStart) // Reset file pointer
+	hash, err := c.computeHash(file)
+	if err != nil {
+		return fmt.Errorf("failed to compute image hash: %v", err)
+	}
+
+	// Check for duplicates
+	for _, existingHash := range c.imageHashes {
+		distance, _ := hash.Distance(existingHash)
+		if distance == 3 { // Identical image
+			return fmt.Errorf("duplicate image detected")
+		}
+	}
+
+	// Upload the image to Cloud Storage
+	file.Seek(0, io.SeekStart) // Reset file pointer again
 	wc := c.cl.Bucket(c.bucketName).Object(c.uploadPath + object).NewWriter(ctx)
 	if _, err := io.Copy(wc, file); err != nil {
 		return fmt.Errorf("io.Copy: %v", err)
@@ -160,6 +334,9 @@ func (c *ClientUploader) UploadFile(file multipart.File, object string) error {
 	if err := wc.Close(); err != nil {
 		return fmt.Errorf("Writer.Close: %v", err)
 	}
+
+	// Store the hash
+	c.imageHashes[object] = hash
 
 	return nil
 }
@@ -227,23 +404,4 @@ func (c *ClientUploader) HealthCheck() gin.HandlerFunc {
 func isAllowedFileType(filename string) bool {
 	lower := strings.ToLower(filename)
 	return strings.HasSuffix(lower, ".jpg") || strings.HasSuffix(lower, ".jpeg")
-}
-
-func makeObjectPublic(bucketName, objectName string) error {
-	ctx := context.Background()
-	client, err := storage.NewClient(ctx, option.WithCredentialsFile(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")))
-	if err != nil {
-		return err
-	}
-	defer client.Close()
-
-	bucket := client.Bucket(bucketName)
-	obj := bucket.Object(objectName)
-
-	// Make the object publicly readable
-	if err := obj.ACL().Set(ctx, storage.AllUsers, storage.RoleReader); err != nil {
-		return err
-	}
-
-	return nil
 }

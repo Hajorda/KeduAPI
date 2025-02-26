@@ -24,6 +24,9 @@ WORKDIR /root/
 # Copy the pre-built binary file from the previous stage
 COPY --from=builder /app/main .
 
+# Copy the public directory to serve static files
+COPY --from=builder /app/public ./public
+
 # Expose the port the app runs on
 EXPOSE 8080
 

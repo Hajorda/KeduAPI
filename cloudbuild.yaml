@@ -1,26 +1,26 @@
 steps:
-# Build the container image
-- name: 'gcr.io/cloud-builders/docker'
-  args: ['build', '-t', 'gcr.io/$PROJECT_ID/keduapi', '.']
+  # Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/keduapi', '.']
 
-# Push the container image to Container Registry
-- name: 'gcr.io/cloud-builders/docker'
-  args: ['push', 'gcr.io/$PROJECT_ID/keduapi']
+  # Push the container image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/keduapi']
 
-# Deploy container to Cloud Run
-- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-  entrypoint: gcloud
-  args:
-  - 'run'
-  - 'deploy'
-  - 'keduapi'
-  - '--image'
-  - 'gcr.io/$PROJECT_ID/keduapi'
-  - '--platform'
-  - 'managed'
-  - '--region'
-  - 'europe-west3'
-  - '--allow-unauthenticated'
+  # Deploy container to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+    - 'run'
+    - 'deploy'
+    - 'keduapi'
+    - '--image'
+    - 'gcr.io/$PROJECT_ID/keduapi'
+    - '--platform'
+    - 'managed'
+    - '--region'
+    - 'europe-west1'
+    - '--allow-unauthenticated'
 
 images:
-- 'gcr.io/$PROJECT_ID/keduapi'
+  - 'gcr.io/$PROJECT_ID/keduapi'
