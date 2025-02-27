@@ -17,12 +17,15 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 
+	"cloud.google.com/go/firestore"
 	"cloud.google.com/go/storage"
+	firebase "firebase.google.com/go"
 	"github.com/corona10/goimagehash"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/exp/rand"
 	"google.golang.org/api/iterator"
+	"google.golang.org/api/option"
 )
 
 const (
@@ -37,10 +40,21 @@ type ClientUploader struct {
 	projectID   string
 	bucketName  string
 	uploadPath  string
-	imageHashes map[string]*goimagehash.ImageHash
+	firestoreDB *firestore.Client
+}
+
+// Define the Image struct for Firestore
+type Image struct {
+	ImageHash string `firestore:"imageHash"`
+	ImageName string `firestore:"imageName"`
 }
 
 var uploader *ClientUploader
+
+const (
+	firebaseConfigFile = "keduapi-15ac7bd4be11.json"
+	firebaseDBURL      = "https://keduapi-cb376-default-rtdb.europe-west1.firebasedatabase.app/"
+)
 
 func init() {
 	ctx := context.Background()
@@ -51,11 +65,27 @@ func init() {
 		log.Printf("Failed to create Google Cloud Storage client: %v", err)
 	}
 
+	// Initialize Firebase
+	ctx = context.Background()
+	opt := option.WithCredentialsFile(firebaseConfigFile)
+	app, err := firebase.NewApp(ctx, &firebase.Config{ProjectID: projectID}, opt)
+
+	if err != nil {
+		log.Fatalf("Firebase initialization error: %v\n", err)
+	}
+
+	// Initialize Firestore
+	firestoreClient, err := app.Firestore(ctx)
+	if err != nil {
+		log.Fatalf("Firestore initialization error: %v\n", err)
+	}
+
 	uploader = &ClientUploader{
-		cl:         client,
-		projectID:  projectID,
-		bucketName: bucketName,
-		uploadPath: defaultUploadPath,
+		cl:          client,
+		projectID:   projectID,
+		bucketName:  bucketName,
+		uploadPath:  defaultUploadPath,
+		firestoreDB: firestoreClient,
 	}
 }
 
@@ -141,7 +171,7 @@ func main() {
 			return
 		}
 
-		rand.Seed(time.Now().UnixNano())
+		rand.Seed(uint64(time.Now().UnixNano()))
 		randomIndex := rand.Intn(len(images))
 		randomImage := images[randomIndex]
 
@@ -317,13 +347,60 @@ func (c *ClientUploader) UploadFile(file multipart.File, object string) error {
 		return fmt.Errorf("failed to compute image hash: %v", err)
 	}
 
-	// Check for duplicates
-	for _, existingHash := range c.imageHashes {
-		distance, _ := hash.Distance(existingHash)
-		if distance == 3 { // Identical image
-			return fmt.Errorf("duplicate image detected")
+	// Check for duplicates in Firestore
+	imageHash := hash.GetHash()
+	imageHashStr := strings.TrimSpace(fmt.Sprintf("%d", imageHash))
+
+	fmt.Println("Debug: Checking for duplicate image with hash:", imageHashStr)
+
+	query := c.firestoreDB.Collection("images").Where("imageHash", "==", imageHashStr).Limit(1)
+	iter := query.Documents(ctx)
+	defer iter.Stop()
+
+	// // Print query reference for debugging
+	// fmt.Println("Debug: Firestore Query Reference:", query)
+
+	doc, err := iter.Next()
+
+	if err == nil {
+		fmt.Println("Debug: Duplicate image found in Firestore. Document ID:", doc.Ref.ID)
+
+		// Print the stored hash from Firestore
+		storedHash, err := doc.DataAt("image_hash")
+		if err == nil {
+			fmt.Println("Debug: Stored hash in Firestore:", storedHash)
+		} else {
+			fmt.Println("Debug: Failed to read stored hash:", err)
 		}
+
+		return fmt.Errorf("duplicate image detected")
+	} else if err == iterator.Done {
+		fmt.Println("Debug: No duplicate found, proceeding with upload.")
+	} else {
+		fmt.Println("Error querying Firestore:", err)
+		return fmt.Errorf("error querying Firestore: %v", err)
 	}
+
+	// No duplicate found, continue
+
+	// // Fetch all images to inspect stored values
+	// iter = c.firestoreDB.Collection("images").Documents(ctx)
+	// defer iter.Stop()
+
+	// fmt.Println("Debug: Fetching all stored images to check stored hashes.")
+	// for {
+	// 	doc, err := iter.Next()
+	// 	if err == iterator.Done {
+	// 		break
+	// 	}
+	// 	if err != nil {
+	// 		fmt.Println("Error fetching images:", err)
+	// 		return fmt.Errorf("error fetching images: %v", err)
+	// 	}
+
+	// 	storedHash, _ := doc.DataAt("image_hash")
+	// 	fmt.Printf("Debug: Stored hash in Firestore: [%v] (type: %T), Document ID: %s\n", storedHash, storedHash, doc.Ref.ID)
+	// }
 
 	// Upload the image to Cloud Storage
 	file.Seek(0, io.SeekStart) // Reset file pointer again
@@ -335,8 +412,11 @@ func (c *ClientUploader) UploadFile(file multipart.File, object string) error {
 		return fmt.Errorf("Writer.Close: %v", err)
 	}
 
-	// Store the hash
-	c.imageHashes[object] = hash
+	// Store the hash and image name in Firestore
+	_, err = c.firestoreDB.Collection("images").Doc(object).Set(ctx, Image{ImageHash: fmt.Sprintf("%d", hash.GetHash()), ImageName: object})
+	if err != nil {
+		return fmt.Errorf("failed to store image in Firestore: %v", err)
+	}
 
 	return nil
 }
