@@ -11,6 +11,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -204,6 +205,31 @@ func main() {
 		})
 	})
 
+	// Get a subset of images
+	r.GET("/list-subset-images", func(c *gin.Context) {
+		startStr := c.Query("start")
+		endStr := c.Query("end")
+
+		start, err := strconv.Atoi(startStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid start parameter"})
+			return
+		}
+
+		end, err := strconv.Atoi(endStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid end parameter"})
+			return
+		}
+
+		images, err := uploader.ListSubsetImages(start, end)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"images": images})
+	})
+
 	// Health check endpoint
 	r.GET("/health", uploader.HealthCheck())
 
@@ -315,6 +341,35 @@ func VerifyCaptcha(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Captcha validated successfully"})
+}
+
+func (c *ClientUploader) ListSubsetImages(start, end int) ([]string, error) {
+	ctx := context.Background()
+
+	it := c.cl.Bucket(c.bucketName).Objects(ctx, &storage.Query{Prefix: c.uploadPath})
+	var images []string
+	for {
+		objAttrs, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("iterator.Next: %v", err)
+		}
+		images = append(images, objAttrs.Name)
+	}
+
+	if start < 0 || end > len(images) || start > end {
+		return nil, fmt.Errorf("invalid start or end index")
+	}
+
+	var imageURLs []string
+	for _, imageName := range images[start:end] {
+		publicURL := fmt.Sprintf("https://storage.googleapis.com/%s/%s", c.bucketName, imageName)
+		imageURLs = append(imageURLs, publicURL)
+	}
+
+	return imageURLs, nil
 }
 
 func (c *ClientUploader) computeHash(img multipart.File) (*goimagehash.ImageHash, error) {
@@ -431,7 +486,7 @@ func (c *ClientUploader) ListImages() ([]string, error) {
 	ctx := context.Background()
 
 	it := c.cl.Bucket(c.bucketName).Objects(ctx, &storage.Query{Prefix: c.uploadPath})
-	var images []string
+	var imageURLs []string
 	for {
 		objAttrs, err := it.Next()
 		if err == iterator.Done {
@@ -440,10 +495,11 @@ func (c *ClientUploader) ListImages() ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("iterator.Next: %v", err)
 		}
-		images = append(images, objAttrs.Name)
+		publicURL := fmt.Sprintf("https://storage.googleapis.com/%s/%s", c.bucketName, objAttrs.Name)
+		imageURLs = append(imageURLs, publicURL)
 	}
 
-	return images, nil
+	return imageURLs, nil
 }
 
 // GetSpecificImage retrieves a specific image's metadata
