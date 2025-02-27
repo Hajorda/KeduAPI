@@ -207,6 +207,11 @@ func main() {
 	// Health check endpoint
 	r.GET("/health", uploader.HealthCheck())
 
+	// Custom 404 handler
+	r.NoRoute(func(c *gin.Context) {
+		c.File("./public/index.html")
+	})
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080" // Default port if not specified
